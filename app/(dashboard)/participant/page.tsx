@@ -6,21 +6,24 @@ import Link from 'next/link'
 import { authService } from '@/services/auth.service'
 import { eventsService } from '@/services/events.service'
 import { registrationsService } from '@/services/registrations.service'
-import { Event, Registration } from '@/types'
+import { Event, Registration, User } from '@/types'
 import { formatDate, timeUntil } from '@/lib/utils'
 
 export default function ParticipantDashboard() {
-  const user = authService.getCurrentUser()
-  const [events, setEvents]     = useState<Event[]>([])
-  const [myRegs, setMyRegs]     = useState<Registration[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [user, setUser] = useState<User | null>(null)
+  const [events, setEvents] = useState<Event[]>([])
+  const [myRegs, setMyRegs] = useState<Registration[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!user) return
     async function load() {
+      const u = await authService.getCurrentUser()
+      setUser(u)
+      if (!u) return
+
       const [evRes, regRes] = await Promise.all([
         eventsService.getAll(),
-        registrationsService.getMyRegistrations(user!.id),
+        registrationsService.getMyRegistrations(u.id),
       ])
       setEvents(evRes.data ?? [])
       setMyRegs((regRes.data ?? []).filter((r: Registration) => r.status !== 'CANCELLED'))

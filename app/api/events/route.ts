@@ -1,58 +1,76 @@
-// Path: app/api/events/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { mockEvents, mockUsers } from '@/lib/mock-data'
-import { Event, CreateEventPayload } from '@/types'
-import { generateId } from '@/lib/utils'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const createdBy = searchParams.get('created_by')   // organizer's own events
-  const status    = searchParams.get('status')
-  const type      = searchParams.get('type')
-  const search    = searchParams.get('search')?.toLowerCase()
+  const createdBy = searchParams.get('created_by')
+  const status = searchParams.get('status')
+  const type = searchParams.get('type')
+  const search = searchParams.get('search')?.toLowerCase()
 
-  let events = [...mockEvents]
+  const supabase = createServerClient()
 
-  if (createdBy) events = events.filter(e => e.created_by === createdBy)
-  if (status)    events = events.filter(e => e.status === status)
-  if (type)      events = events.filter(e => e.type === type)
-  if (search)    events = events.filter(e =>
-    e.title.toLowerCase().includes(search) ||
-    e.description.toLowerCase().includes(search) ||
-    e.location.toLowerCase().includes(search)
-  )
+  // `organizer` relation references the profiles table via created_by FK
+  let query = supabase.from('events').select(`*, organizer:profiles!events_created_by_fkey(*)`)
 
-  // Attach organizer info
-  events = events.map(ev => ({
-    ...ev,
-    organizer: mockUsers.find(u => u.id === ev.created_by),
-  }))
+  if (createdBy) query = query.eq('created_by', createdBy)
+  if (status) query = query.eq('status', status)
+  if (type) query = query.eq('type', type)
+  if (search) query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%,location.ilike.%${search}%`)
 
-  return NextResponse.json({ data: events, error: null, success: true })
+  query = query.order('start_date', { ascending: true })
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error("GET /api/events error:", error)
+    return NextResponse.json({ data: null, error: error.message, success: false }, { status: 500 })
+  }
+
+  return NextResponse.json({ data, error: null, success: true })
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body: CreateEventPayload & { created_by: string } = await req.json()
+    const supabase = createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    const creator = mockUsers.find(u => u.id === body.created_by)
-    if (!creator) return NextResponse.json({ data: null, error: 'User not found', success: false }, { status: 404 })
-
-    const newEvent: Event = {
-      id: generateId('event'),
-      ...body,
-      status: 'DRAFT',
-      tags: body.tags ?? [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      registration_count: 0,
-      checkin_count: 0,
-      organizer: creator,
+    if (!user) {
+      return NextResponse.json({ data: null, error: 'Unauthorized', success: false }, { status: 401 })
     }
 
-    mockEvents.push(newEvent)
-    return NextResponse.json({ data: newEvent, error: null, success: true }, { status: 201 })
-  } catch {
+    const body = await req.json()
+
+    // Insert into events table securely, overriding `created_by` with session user id
+    const { data, error } = await supabase
+      .from('events')
+      .insert({
+        title: body.title,
+        description: body.description ?? '',
+        type: body.type,
+        start_date: body.start_date,
+        end_date: body.end_date,
+        location: body.location,
+        max_participants: body.max_participants,
+        max_team_size: body.max_team_size || null,
+        min_team_size: body.min_team_size || null,
+        registration_deadline: body.registration_deadline,
+        tags: body.tags ?? [],
+        cover_image: body.cover_image ?? null,
+        created_by: user.id,
+        status: 'DRAFT',
+      })
+      .select(`*, organizer:profiles!events_created_by_fkey(*)`)
+      .single()
+
+    if (error) {
+      console.error("POST /api/events error:", error)
+      return NextResponse.json({ data: null, error: error.message, success: false }, { status: 500 })
+    }
+
+    return NextResponse.json({ data, error: null, success: true }, { status: 201 })
+  } catch (e: any) {
+    console.error("POST /api/events exception:", e)
     return NextResponse.json({ data: null, error: 'Failed to create event', success: false }, { status: 500 })
   }
 }

@@ -1,38 +1,58 @@
-// Path: app/api/events/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { mockEvents } from '@/lib/mock-data'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const event = mockEvents.find(e => e.id === params.id)
-  if (!event) return NextResponse.json({ data: null, error: 'Event not found', success: false }, { status: 404 })
-  return NextResponse.json({ data: event, error: null, success: true })
+  const supabase = createServerClient()
+
+  const { data, error } = await supabase
+    .from('events')
+    .select(`*, organizer:profiles!events_created_by_fkey(*)`)
+    .eq('id', params.id)
+    .single()
+
+  if (error || !data) {
+    return NextResponse.json({ data: null, error: 'Event not found', success: false }, { status: 404 })
+  }
+
+  return NextResponse.json({ data, error: null, success: true })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const event = mockEvents.find(e => e.id === params.id)
-  if (!event) return NextResponse.json({ data: null, error: 'Event not found', success: false }, { status: 404 })
+  const supabase = createServerClient()
 
   const updates = await req.json()
-  const requesterId = updates.requested_by
+  // RLS will automatically reject if the user isn't the creator
+  delete updates.requested_by
 
-  // Only event creator can modify
-  if (requesterId && event.created_by !== requesterId) {
-    return NextResponse.json({ data: null, error: 'Not authorized — you are not the organizer of this event', success: false }, { status: 403 })
+  const { data, error } = await supabase
+    .from('events')
+    .update(updates)
+    .eq('id', params.id)
+    .select(`*, organizer:profiles!events_created_by_fkey(*)`)
+    .single()
+
+  if (error) {
+    console.error(`PATCH /api/events/${params.id} error:`, error)
+    return NextResponse.json({ data: null, error: error.message, success: false }, { status: 500 })
   }
 
-  Object.assign(event, { ...updates, updated_at: new Date().toISOString() })
-  return NextResponse.json({ data: event, error: null, success: true })
+  return NextResponse.json({ data, error: null, success: true })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const idx = mockEvents.findIndex(e => e.id === params.id)
-  if (idx === -1) return NextResponse.json({ data: null, error: 'Event not found', success: false }, { status: 404 })
+  const supabase = createServerClient()
 
-  const { requested_by } = await req.json().catch(() => ({}))
-  if (requested_by && mockEvents[idx].created_by !== requested_by) {
-    return NextResponse.json({ data: null, error: 'Not authorized', success: false }, { status: 403 })
+  // RLS `events_delete_own_draft` ensures only the organizer can delete it
+  // and ONLY if status is DRAFT or CANCELLED.
+  const { error } = await supabase
+    .from('events')
+    .delete()
+    .eq('id', params.id)
+
+  if (error) {
+    console.error(`DELETE /api/events/${params.id} error:`, error)
+    return NextResponse.json({ data: null, error: error.message, success: false }, { status: 500 })
   }
 
-  mockEvents.splice(idx, 1)
   return NextResponse.json({ data: null, error: null, success: true })
 }

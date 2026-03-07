@@ -66,7 +66,7 @@ export const mockEvents: Event[] = [
     min_team_size: 2,
     registration_deadline: new Date(Date.now() + 5 * 86400000).toISOString(),
     tags: ['AI', 'Hackathon', 'Open Source'],
-    created_by: 'user-org-1',   // Alex Organizer owns this event
+    created_by: 'user-org-1',
     created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
     updated_at: new Date(Date.now() - 2 * 86400000).toISOString(),
     registration_count: 87,
@@ -85,7 +85,7 @@ export const mockEvents: Event[] = [
     max_participants: 100,
     registration_deadline: new Date(Date.now() + 12 * 86400000).toISOString(),
     tags: ['Design', 'UX', 'Sprint'],
-    created_by: 'user-org-2',  // Priya Shah owns this event
+    created_by: 'user-org-2',
     created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
     updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
     registration_count: 43,
@@ -104,7 +104,7 @@ export const mockEvents: Event[] = [
     max_participants: 500,
     registration_deadline: new Date(Date.now() - 2 * 86400000).toISOString(),
     tags: ['Open Source', 'Community'],
-    created_by: 'user-org-1',   // Alex also owns this
+    created_by: 'user-org-1',
     created_at: new Date(Date.now() - 20 * 86400000).toISOString(),
     updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
     registration_count: 312,
@@ -145,11 +145,14 @@ export const mockRegistrations: Registration[] = [
     created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
   },
   {
+    // ✅ FIX 1: Added team_id: 'team-2' — Arjun is CodeCraft's leader
+    //    Previously missing, causing mismatch with SQL seed data
     id: 'reg-4',
     event_id: 'event-1',
     user_id: 'user-p-4',
     status: 'CONFIRMED',
     qr_token: 'QR-EVT1-USR4-E5R9',
+    team_id: 'team-2',
     checked_in: false,
     created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
   },
@@ -237,7 +240,7 @@ export const mockJoinRequests: TeamJoinRequest[] = [
     created_at: new Date(Date.now() - 3600000).toISOString(),
     updated_at: new Date(Date.now() - 3600000).toISOString(),
     user: mockUsers[2], // Jamie Dev
-    team: mockTeams[1],
+    team: mockTeams[1], // CodeCraft
   },
 ]
 
@@ -266,10 +269,12 @@ export const mockNotifications: Notification[] = [
     created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
   },
   {
+    // ✅ FIX 2: Changed "Neural Ninjas" → "CodeCraft"
+    //    Jamie's join request (req-1) targets team-2 (CodeCraft), not Neural Ninjas
     id: 'notif-2',
     user_id: 'user-p-2',
     title: 'Join Request Received',
-    message: 'Jamie Dev wants to join Neural Ninjas.',
+    message: 'Jamie Dev wants to join CodeCraft.',
     type: 'INFO',
     category: 'TEAM',
     read: false,
@@ -280,10 +285,10 @@ export const mockNotifications: Notification[] = [
 
 // ─── CREDENTIALS ─────────────────────────────────────────────────────────────
 export const mockCredentials: Record<string, string> = {
-  'organizer@eventos.dev':  'org123',
-  'priya@eventos.dev':      'org123',
-  'participant@eventos.dev':'part123',
-  'sam@eventos.dev':        'part123',
-  'riya@eventos.dev':       'part123',
-  'arjun@eventos.dev':      'part123',
+  'organizer@eventos.dev': 'org123',
+  'priya@eventos.dev': 'org123',
+  'participant@eventos.dev': 'part123',
+  'sam@eventos.dev': 'part123',
+  'riya@eventos.dev': 'part123',
+  'arjun@eventos.dev': 'part123',
 }

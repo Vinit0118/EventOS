@@ -22,10 +22,10 @@ const ROLES: { value: UserRole; label: string; emoji: string; desc: string; perk
 
 export default function RegisterPage() {
   const router = useRouter()
-  const [form, setForm]         = useState({ name: '', email: '', password: '', role: '' as UserRole | '' })
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: '' as UserRole | '' })
   const [showPass, setShowPass] = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -33,7 +33,6 @@ export default function RegisterPage() {
     setError(''); setLoading(true)
     const res = await authService.register({ ...form, role: form.role as UserRole })
     if (!res.success || !res.data) { setError(res.error ?? 'Registration failed'); setLoading(false); return }
-    authService.saveSession(res.data)
     router.push(authService.getDashboardRoute(res.data.user.role))
   }
 
@@ -61,7 +60,7 @@ export default function RegisterPage() {
                     className="p-4 rounded-xl text-left transition-all border"
                     style={{
                       borderColor: selected ? 'var(--brand)' : 'var(--border)',
-                      background:  selected ? 'var(--brand-pale)' : 'white',
+                      background: selected ? 'var(--brand-pale)' : 'white',
                     }}>
                     <div className="text-2xl mb-2">{r.emoji}</div>
                     <p className="font-semibold text-sm mb-0.5">{r.label}</p>

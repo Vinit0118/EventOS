@@ -1,38 +1,50 @@
-// Path: app/api/events/[id]/analytics/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { mockEvents, mockRegistrations, mockTeams, mockCheckIns } from '@/lib/mock-data'
+import { createServerClient } from '@/lib/supabase/server'
 import { calculateHealthScore } from '@/lib/utils'
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const event = mockEvents.find(e => e.id === params.id)
-  if (!event) return NextResponse.json({ data: null, error: 'Event not found', success: false }, { status: 404 })
+  const supabase = createServerClient()
 
-  const regs     = mockRegistrations.filter(r => r.event_id === params.id && r.status !== 'CANCELLED')
-  const checkins = mockCheckIns.filter(c => c.event_id === params.id)
-  const teams    = mockTeams.filter(t => t.event_id === params.id)
+  // 1. Fetch the pre-computed event_stats view
+  const { data: stats, error } = await supabase
+    .from('event_stats')
+    .select('*')
+    .eq('event_id', params.id)
+    .single()
 
-  const checkinRate       = regs.length > 0 ? Math.round((checkins.length / regs.length) * 100) : 0
-  const teamFormationRate = event.type === 'TEAM' && regs.length > 0
-    ? Math.round((regs.filter(r => r.team_id).length / regs.length) * 100) : 0
+  if (error || !stats) {
+    console.error("Analytics fetch error:", error)
+    return NextResponse.json({ data: null, error: 'Event not found or stats unavilable', success: false }, { status: 404 })
+  }
 
-  // Simple velocity: count regs per day for last 7 days
+  // 2. Fetch velocity data (last 7 days of registrations)
+  const lastWeek = new Date()
+  lastWeek.setDate(lastWeek.getDate() - 7)
+
+  const { data: regs } = await supabase
+    .from('registrations')
+    .select('created_at')
+    .eq('event_id', params.id)
+    .neq('status', 'CANCELLED')
+    .gte('created_at', lastWeek.toISOString())
+
   const velocity = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i))
     const day = d.toISOString().slice(0, 10)
-    return { date: day, count: regs.filter(r => r.created_at.slice(0, 10) === day).length }
+    const count = regs?.filter(r => r.created_at.slice(0, 10) === day).length || 0
+    return { date: day, count }
   })
 
+  // 3. Assemble final analytics object
   const analytics = {
-    event_id:              params.id,
-    total_registrations:   regs.length,
-    confirmed_registrations: regs.filter(r => r.status === 'CONFIRMED').length,
-    checked_in_count:      checkins.length,
-    total_teams:           teams.length,
-    approved_teams:        teams.filter(t => t.status === 'APPROVED').length,
-    checkin_rate:          checkinRate,
-    team_formation_rate:   teamFormationRate,
+    ...stats,
     registration_velocity: velocity,
-    health_score:          calculateHealthScore(regs.length, event.max_participants, checkinRate, teamFormationRate),
+    health_score: calculateHealthScore(
+      stats.total_registrations,
+      stats.max_participants,
+      stats.checkin_rate,
+      stats.team_formation_rate
+    ),
   }
 
   return NextResponse.json({ data: analytics, error: null, success: true })

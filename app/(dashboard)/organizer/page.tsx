@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Plus, X, Loader2, Calendar, MapPin, Users, BarChart3 } from 'lucide-react'
 import { eventsService } from '@/services/events.service'
 import { authService } from '@/services/auth.service'
-import { Event, CreateEventPayload, EventType, EventAnalytics } from '@/types'
+import { Event, CreateEventPayload, EventType, EventAnalytics, User } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -31,23 +31,28 @@ function HealthBar({ score }: { score: number }) {
 }
 
 export default function OrganizerPage() {
-  const user = authService.getCurrentUser()
-  const [events, setEvents]     = useState<Event[]>([])
+  const [user, setUser] = useState<User | null>(null)
+  const [events, setEvents] = useState<Event[]>([])
   const [analytics, setAnalytics] = useState<Record<string, EventAnalytics>>({})
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm]         = useState<CreateEventPayload>(defaultForm)
+  const [form, setForm] = useState<CreateEventPayload>(defaultForm)
   const [tagInput, setTagInput] = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    if (!user) return
+    let u = user
+    if (!u) {
+      u = await authService.getCurrentUser()
+      setUser(u)
+    }
+    if (!u) return
     setLoading(true)
     // Only fetch events created by this user
-    const res = await eventsService.getAll({ created_by: user.id })
+    const res = await eventsService.getAll({ created_by: u.id })
     setEvents(res.data ?? [])
     const map: Record<string, EventAnalytics> = {}
     await Promise.all((res.data ?? []).map(async (e: Event) => {
@@ -82,9 +87,9 @@ export default function OrganizerPage() {
     if (t && !form.tags.includes(t)) { setForm({ ...form, tags: [...form.tags, t] }); setTagInput('') }
   }
 
-  const totalRegs    = events.reduce((s, e) => s + (e.registration_count ?? 0), 0)
+  const totalRegs = events.reduce((s, e) => s + (e.registration_count ?? 0), 0)
   const totalCheckin = events.reduce((s, e) => s + (e.checkin_count ?? 0), 0)
-  const active       = events.filter(e => ['PUBLISHED', 'ONGOING'].includes(e.status)).length
+  const active = events.filter(e => ['PUBLISHED', 'ONGOING'].includes(e.status)).length
 
   return (
     <div className="p-8 max-w-6xl">
@@ -103,9 +108,9 @@ export default function OrganizerPage() {
       {/* Quick stats */}
       <div className="grid grid-cols-3 gap-3 mb-8">
         {[
-          { label: 'Your Events',  value: events.length, sub: `${active} live` },
-          { label: 'Registrations', value: totalRegs,  sub: 'across all events' },
-          { label: 'Checked In',   value: totalCheckin, sub: 'total attendees' },
+          { label: 'Your Events', value: events.length, sub: `${active} live` },
+          { label: 'Registrations', value: totalRegs, sub: 'across all events' },
+          { label: 'Checked In', value: totalCheckin, sub: 'total attendees' },
         ].map(({ label, value, sub }) => (
           <div key={label} className="card bg-white p-4 slide-up">
             <p className="label-xs mb-3">{label}</p>
@@ -157,9 +162,9 @@ export default function OrganizerPage() {
 
                 <div className="space-y-1.5 mb-4">
                   {[
-                    { icon: MapPin,    text: event.location },
+                    { icon: MapPin, text: event.location },
                     { icon: Calendar, text: `${formatDate(event.start_date)} → ${formatDate(event.end_date)}` },
-                    { icon: Users,    text: `${event.registration_count ?? 0} / ${event.max_participants} registered` },
+                    { icon: Users, text: `${event.registration_count ?? 0} / ${event.max_participants} registered` },
                   ].map(({ icon: Icon, text }) => (
                     <div key={text} className="flex items-center gap-2 text-xs" style={{ color: 'var(--ink-3)' }}>
                       <Icon className="w-3 h-3 flex-shrink-0" />{text}
