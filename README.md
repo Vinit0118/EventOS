@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# EventOS 🚀
 
-## Getting Started
+A complete, production-grade Event Operating System built for hackathons.
 
-First, run the development server:
+## Quick Start
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Copy env template
+cp .env.local.example .env.local
+
+# 3. Run dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Demo Accounts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@eventos.dev | admin123 |
+| Participant | participant@eventos.dev | part123 |
+| Volunteer | volunteer@eventos.dev | vol123 |
+| Judge | judge@eventos.dev | judge123 |
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+```
+Page/Component  →  Service (services/*.ts)  →  API Route (app/api/)  →  Mock Data / Supabase
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**UI never touches data directly. All logic lives in services.**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Connecting Supabase (when ready)
 
-## Deploy on Vercel
+1. Create project at supabase.com
+2. Run `supabase-schema.sql` in SQL Editor
+3. Fill `.env.local` with your keys
+4. In `lib/supabase/client.ts` and `lib/supabase/server.ts`: uncomment real implementations, comment out mocks
+5. In each `app/api/*/route.ts`: uncomment Supabase sections, comment mock sections
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/
+  (auth)/          # Login, Register
+  (dashboard)/
+    admin/         # Admin dashboard, events, check-in
+    participant/   # Events, team management
+    volunteer/     # Check-in scanner
+    judge/         # Analytics view
+  api/             # All API routes
+services/          # Business logic (call these from components)
+types/             # TypeScript interfaces
+lib/
+  mock-data.ts     # In-memory DB (active until Supabase)
+  supabase/        # Client + Server stubs (swap to real)
+constants/         # RBAC roles and permissions
+```
+
+## Features Built
+
+- ✅ Auth (login/register with role selection)
+- ✅ RBAC (Admin, Participant, Volunteer, Judge)
+- ✅ Multi-event management
+- ✅ Event creation with full form
+- ✅ Event status state machine
+- ✅ Participant registration with QR token generation
+- ✅ Team creation, join by invite code
+- ✅ QR check-in system
+- ✅ Admin dashboard with health scores
+- ✅ Volunteer check-in scanner
+- ✅ Judge analytics view
+- ✅ Live mock data that persists in-session
+- ✅ Supabase schema ready to deploy
