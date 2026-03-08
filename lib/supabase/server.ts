@@ -36,9 +36,16 @@ export const createServerClient = () => {
 // ─── SERVICE ROLE CLIENT ──────────────────────────────────────────────────────
 // Bypasses RLS. Use ONLY in trusted server-side routes (e.g. sending
 // notifications, admin operations). Never expose to the client.
+// Cached as a singleton to avoid creating multiple connections.
 
-export const createServiceClient = () =>
-  createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+let _serviceClient: ReturnType<typeof createClient> | null = null
+
+export const createServiceClient = () => {
+  if (!_serviceClient) {
+    _serviceClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _serviceClient
+}

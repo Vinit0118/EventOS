@@ -78,7 +78,8 @@ export async function POST(req: NextRequest) {
         // Use service role to bypass RLS for bulk insert
         // (RLS only allows users to read their own notifications, not insert)
         const serviceClient = createServiceClient()
-        const { error: insertError } = await serviceClient
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: insertError } = await (serviceClient as any)
             .from('notifications')
             .insert(notifications)
 

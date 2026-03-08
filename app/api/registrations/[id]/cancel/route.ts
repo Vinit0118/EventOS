@@ -33,7 +33,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     }
 
     // Use service client for cascade operations (bypasses RLS)
-    const admin = createServiceClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createServiceClient() as any
 
     // 3. Check if user is a team leader for this event
     const { data: ledTeam } = await admin
@@ -55,7 +56,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
       // b. Cancel all team members' registrations for this event
       if (members && members.length > 0) {
-        const memberUserIds = members.map(m => m.user_id)
+        const memberUserIds = members.map((m: { user_id: string }) => m.user_id)
         await admin
           .from('registrations')
           .update({ status: 'CANCELLED', team_id: null })

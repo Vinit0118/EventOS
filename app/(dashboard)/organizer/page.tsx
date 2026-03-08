@@ -2,11 +2,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, X, Loader2, Calendar, MapPin, Users, BarChart3 } from 'lucide-react'
+import { Plus, X, Loader2, Calendar, MapPin, Users, BarChart3, Upload, Award, Search, Check } from 'lucide-react'
 
 import { eventsService } from '@/services/events.service'
 import { authService } from '@/services/auth.service'
-import { Event, CreateEventPayload, EventType, EventAnalytics, User } from '@/types'
+import { Event, CreateEventPayload, EventType, EventAnalytics, User, EventJudge, JUDGING_CRITERIA } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -44,6 +44,14 @@ export default function OrganizerPage() {
   const [error, setError] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>('')
+  // Judge / Criteria management
+  const [manageEventId, setManageEventId] = useState<string | null>(null)
+  const [judges, setJudges] = useState<EventJudge[]>([])
+  const [selectedCriteria, setSelectedCriteria] = useState<string[]>([])
+  const [judgeSearch, setJudgeSearch] = useState('')
+  const [judgeResults, setJudgeResults] = useState<User[]>([])
+  const [searchingJudge, setSearchingJudge] = useState(false)
+  const [loadingJudges, setLoadingJudges] = useState(false)
 
   const load = useCallback(async () => {
     let u = user
@@ -108,6 +116,60 @@ export default function OrganizerPage() {
   function addTag() {
     const t = tagInput.trim()
     if (t && !form.tags.includes(t)) { setForm({ ...form, tags: [...form.tags, t] }); setTagInput('') }
+  }
+
+  async function openManagePanel(eventId: string) {
+    setManageEventId(eventId)
+    setLoadingJudges(true)
+    setJudgeSearch('')
+    setJudgeResults([])
+    const [judgesRes, criteriaRes] = await Promise.all([
+      fetch(`/api/events/${eventId}/judges`).then(r => r.json()),
+      fetch(`/api/events/${eventId}/criteria`).then(r => r.json()),
+    ])
+    setJudges(judgesRes.data ?? [])
+    setSelectedCriteria((criteriaRes.data ?? []).map((c: { name: string }) => c.name))
+    setLoadingJudges(false)
+  }
+
+  async function searchJudges() {
+    if (!judgeSearch.trim()) return
+    setSearchingJudge(true)
+    const res = await fetch(`/api/auth/users?search=${encodeURIComponent(judgeSearch.trim())}`).then(r => r.json())
+    setJudgeResults(res.data ?? [])
+    setSearchingJudge(false)
+  }
+
+  async function assignJudge(userId: string) {
+    if (!manageEventId) return
+    await fetch(`/api/events/${manageEventId}/judges`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    })
+    await openManagePanel(manageEventId)
+  }
+
+  async function removeJudge(userId: string) {
+    if (!manageEventId) return
+    await fetch(`/api/events/${manageEventId}/judges/${userId}`, { method: 'DELETE' })
+    setJudges(prev => prev.filter(j => j.user_id !== userId))
+  }
+
+  function toggleCriteria(name: string) {
+    setSelectedCriteria(prev =>
+      prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]
+    )
+  }
+
+  async function saveCriteria() {
+    if (!manageEventId || selectedCriteria.length === 0) return
+    await fetch(`/api/events/${manageEventId}/criteria`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ criteria: selectedCriteria }),
+    })
+    alert('Criteria saved!')
   }
 
   const totalRegs = events.reduce((s, e) => s + (e.registration_count ?? 0), 0)
@@ -230,9 +292,154 @@ export default function OrganizerPage() {
                     <button onClick={() => updateStatus(event.id, 'CANCELLED')} className="btn btn-danger px-3 py-1.5 text-xs rounded-lg">Cancel</button>
                   )}
                 </div>
+
+                {/* Judge + Criteria management */}
+                <div className="flex gap-1.5 flex-wrap mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => openManagePanel(event.id)}
+                    className="btn btn-secondary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1">
+                    <Award className="w-3 h-3" /> Manage Judges & Criteria
+                  </button>
+                </div>
               </div>
             )
           })}
+        </div>
+      )}
+      {/* ── Manage Judges & Criteria Modal ── */}
+      {manageEventId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(15,15,16,0.4)', backdropFilter: 'blur(6px)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto slide-up"
+            style={{ boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-semibold text-[15px] flex items-center gap-2">
+                <Award className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                Manage Judges & Criteria
+              </h2>
+              <button onClick={() => setManageEventId(null)} className="btn btn-ghost p-1.5 rounded-lg">
+                <X className="w-4 h-4" style={{ color: 'var(--ink-3)' }} />
+              </button>
+            </div>
+
+            {loadingJudges ? (
+              <div className="flex items-center justify-center py-16 gap-2 text-sm" style={{ color: 'var(--ink-3)' }}>
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+              </div>
+            ) : (
+              <div className="p-6 space-y-8">
+                {/* Judges Section */}
+                <div>
+                  <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+                    <Users className="w-4 h-4" style={{ color: '#7C3AED' }} />
+                    Assigned Judges ({judges.length})
+                  </h3>
+                  {judges.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                      {judges.map(j => (
+                        <div key={j.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                            style={{ background: 'linear-gradient(135deg, #7C3AED, #5B21B6)' }}>
+                            {j.user?.name?.[0]?.toUpperCase() ?? '?'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{j.user?.name ?? 'Unknown'}</div>
+                            <div className="text-xs" style={{ color: 'var(--ink-4)' }}>{j.user?.email}</div>
+                          </div>
+                          <button onClick={() => removeJudge(j.user_id)}
+                            className="text-xs px-2 py-1 rounded-md"
+                            style={{ color: 'var(--red)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-4)' }} />
+                      <input value={judgeSearch} onChange={e => setJudgeSearch(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && searchJudges()}
+                        placeholder="Search users by name or email..."
+                        className="input pl-9 text-sm" />
+                    </div>
+                    <button onClick={searchJudges} disabled={searchingJudge}
+                      className="btn btn-secondary px-3 py-2 text-sm rounded-lg">
+                      {searchingJudge ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Search'}
+                    </button>
+                  </div>
+                  {judgeResults.length > 0 && (
+                    <div className="mt-3 space-y-1.5">
+                      {judgeResults.map(u => {
+                        const alreadyJudge = judges.some(j => j.user_id === u.id)
+                        return (
+                          <div key={u.id} className="flex items-center gap-3 p-2 rounded-lg" style={{ border: '1px solid var(--border)' }}>
+                            <div className="w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-bold"
+                              style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-deep))' }}>
+                              {u.name[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1">
+                              <span className="text-sm font-medium">{u.name}</span>
+                              <span className="text-xs ml-2" style={{ color: 'var(--ink-4)' }}>{u.email}</span>
+                            </div>
+                            {alreadyJudge ? (
+                              <span className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--green)' }}>
+                                <Check className="w-3 h-3" /> Assigned
+                              </span>
+                            ) : (
+                              <button onClick={() => assignJudge(u.id)}
+                                className="text-xs px-2.5 py-1 rounded-md font-medium"
+                                style={{ color: '#7C3AED', background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)' }}>
+                                Assign
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Criteria Section */}
+                <div>
+                  <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                    Evaluation Criteria ({selectedCriteria.length} selected)
+                  </h3>
+                  <p className="text-xs mb-3" style={{ color: 'var(--ink-3)' }}>
+                    Select the criteria judges will use to score teams (1-10 points each)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {JUDGING_CRITERIA.map(name => {
+                      const selected = selectedCriteria.includes(name)
+                      return (
+                        <button key={name} onClick={() => toggleCriteria(name)}
+                          className="flex items-center gap-2.5 p-2.5 rounded-lg text-sm text-left transition-all"
+                          style={{
+                            background: selected ? 'rgba(229,116,49,0.06)' : 'transparent',
+                            border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+                            color: selected ? 'var(--accent-deep)' : 'var(--ink-2)',
+                            fontWeight: selected ? 600 : 400,
+                          }}>
+                          <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+                            style={{
+                              background: selected ? 'var(--accent)' : 'transparent',
+                              border: selected ? 'none' : '1.5px solid var(--ink-5)',
+                            }}>
+                            {selected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          {name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <button onClick={saveCriteria} disabled={selectedCriteria.length === 0}
+                    className="btn btn-primary px-4 py-2 text-sm mt-4 w-full">
+                    Save Criteria ({selectedCriteria.length})
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -8,6 +8,11 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { LoginPayload, RegisterPayload, User, UserRole } from '@/types'
 import { DASHBOARD_ROUTES } from '@/constants/roles'
 
+// Cache for getCurrentUser to avoid redundant Supabase calls
+let _cachedUser: User | null = null
+let _cacheTimestamp = 0
+const CACHE_TTL = 10_000 // 10 seconds
+
 export const authService = {
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
@@ -33,6 +38,10 @@ export const authService = {
     if (profileError || !profile) {
       return { data: null, error: 'Profile not found', success: false }
     }
+
+    // Update cache
+    _cachedUser = profile as User
+    _cacheTimestamp = Date.now()
 
     return {
       data: {
@@ -76,6 +85,10 @@ export const authService = {
       .eq('id', data.user.id)
       .single()
 
+    // Update cache
+    _cachedUser = profile as User
+    _cacheTimestamp = Date.now()
+
     return {
       data: {
         user: profile as User,
@@ -91,11 +104,21 @@ export const authService = {
 
   // ─── GET CURRENT USER ────────────────────────────────────────────────────────
   // Use this anywhere in client components to get the logged-in user + profile.
+  // Cached for 10 seconds to prevent redundant API calls across layout + pages.
   async getCurrentUser(): Promise<User | null> {
+    // Return cached result if fresh
+    if (_cachedUser && (Date.now() - _cacheTimestamp) < CACHE_TTL) {
+      return _cachedUser
+    }
+
     const supabase = createBrowserClient()
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
+    if (!user) {
+      _cachedUser = null
+      _cacheTimestamp = Date.now()
+      return null
+    }
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -103,11 +126,15 @@ export const authService = {
       .eq('id', user.id)
       .single()
 
-    return profile as User ?? null
+    _cachedUser = profile as User ?? null
+    _cacheTimestamp = Date.now()
+    return _cachedUser
   },
 
   // ─── LOGOUT ─────────────────────────────────────────────────────────────────
   async logout() {
+    _cachedUser = null
+    _cacheTimestamp = 0
     const supabase = createBrowserClient()
     await supabase.auth.signOut()
     window.location.href = '/login'

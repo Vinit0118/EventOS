@@ -159,16 +159,21 @@ export default function ParticipantTeamPage() {
         setInitLoading(false)
         return
       }
-      const regRes = await registrationsService.getMyRegistrations(u.id)
+
+      // Fetch registrations and ALL events in parallel (no N+1)
+      const [regRes, allEvRes] = await Promise.all([
+        registrationsService.getMyRegistrations(u.id),
+        eventsService.getAll(),
+      ])
+
       const regs: Registration[] = (regRes.data ?? []).filter((r: Registration) => r.status !== 'CANCELLED')
       setRegistrations(regs)
 
-      // FIX: fetch event details so dropdown shows title, not raw ID
+      // Build event map from the full list
       const evMap: Record<string, Event> = {}
-      await Promise.all(regs.map(async r => {
-        const evRes = await eventsService.getById(r.event_id)
-        if (evRes.data) evMap[r.event_id] = evRes.data
-      }))
+      for (const ev of (allEvRes.data ?? [])) {
+        evMap[ev.id] = ev
+      }
       setEvents(evMap)
 
       // Default to first TEAM-type event, or first event overall
@@ -186,14 +191,19 @@ export default function ParticipantTeamPage() {
     if (!selectedEventId || !user) return
     if (!silent) setTeamLoading(true)
 
-    const [teamsRes, myTeamRes, reqRes] = await Promise.all([
+    // Single teams fetch + requests in parallel (was 3 calls, now 2 — myTeam derived from teams)
+    const [teamsRes, reqRes] = await Promise.all([
       teamsService.search(selectedEventId, activeSearch || undefined),
-      teamsService.getMyTeam(selectedEventId, user.id),
       teamsService.getMyRequests(user.id),
     ])
 
-    const newTeam: Team | null = myTeamRes.data ?? null
-    setTeams(teamsRes.data ?? [])
+    const allTeams: Team[] = teamsRes.data ?? []
+    setTeams(allTeams)
+
+    // Derive myTeam from the fetched teams instead of a separate API call
+    const newTeam: Team | null = allTeams.find(
+      (t: Team) => t.members?.some((m: { user_id: string }) => m.user_id === user.id)
+    ) ?? null
     setMyTeam(newTeam)
     setMyRequests(reqRes.data ?? [])
 
