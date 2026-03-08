@@ -1,7 +1,5 @@
-// Path: app/api/teams/[id]/respond/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { mockJoinRequests, mockTeams, mockUsers, mockRegistrations } from '@/lib/mock-data'
-import { generateId } from '@/lib/utils'
+import { createServerClient } from '@/lib/supabase/server'
 
 // POST /api/teams/[id]/respond
 // Body: { request_id, response: 'ACCEPTED' | 'REJECTED' }
@@ -10,65 +8,43 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = createServerClient()
     const { request_id, response } = await req.json()
 
-    const team = mockTeams.find(t => t.id === params.id)
-    if (!team) return NextResponse.json({ data: null, error: 'Team not found', success: false }, { status: 404 })
+    // Validate request body
+    if (!['ACCEPTED', 'REJECTED'].includes(response)) {
+      return NextResponse.json({ data: null, error: 'Invalid response status', success: false }, { status: 400 })
+    }
 
-    const request = mockJoinRequests.find(r => r.id === request_id && r.team_id === params.id)
-    if (!request) return NextResponse.json({ data: null, error: 'Request not found', success: false }, { status: 404 })
-    if (request.status !== 'PENDING') return NextResponse.json({ data: null, error: 'Request already resolved', success: false }, { status: 409 })
+    // RLS `req_update_leader` guarantees that only the leader of the team can execute this update.
+    // The massive block of code previously here (checking capacity, injecting team_members, updating registrations, auto-rejecting others...)
+    // is now 100% handled seamlessly by the Postgres AFTER UPDATE trigger `fn_handle_join_request_accepted`. 
+    const { data: request, error } = await supabase
+      .from('team_join_requests')
+      .update({ status: response })
+      .eq('id', request_id)
+      .eq('team_id', params.id)
+      .eq('status', 'PENDING') // Ensure it hasn't been resolved already
+      .select(`*, user:profiles!team_join_requests_user_id_fkey(*), team:teams!team_join_requests_team_id_fkey(*)`)
+      .single()
 
-    // Auto-reject if team became full since request was sent
-    if (response === 'ACCEPTED' && (team.member_count ?? 0) >= team.max_size) {
-      request.status = 'REJECTED'
-      request.updated_at = new Date().toISOString()
+    if (error || !request) {
+      if (error?.code === 'PGRST116') {
+        return NextResponse.json({ data: null, error: 'Request not found, already resolved, or unauthorized', success: false }, { status: 404 })
+      }
+      console.error("POST /api/teams/[id]/respond error:", error)
+      return NextResponse.json({ data: null, error: error?.message || 'Update failed', success: false }, { status: 500 })
+    }
+
+    // The trigger might have overridden our ACCEPTED to REJECTED if the team became full
+    // just before this transaction completed. We can detect and report that gracefully.
+    if (response === 'ACCEPTED' && request.status === 'REJECTED') {
       return NextResponse.json({ data: null, error: 'Team is now full. Request auto-rejected.', success: false }, { status: 400 })
     }
 
-    request.status = response
-    request.updated_at = new Date().toISOString()
-
-    // Decrement pending count
-    if (team.pending_requests && team.pending_requests > 0) team.pending_requests--
-
-    if (response === 'ACCEPTED') {
-      const user = mockUsers.find(u => u.id === request.user_id)
-
-      // Add to team members
-      if (!team.members) team.members = []
-      team.members.push({
-        id: generateId('tm'),
-        team_id: team.id,
-        user_id: request.user_id,
-        role: 'MEMBER',
-        joined_at: new Date().toISOString(),
-        user,
-      })
-      team.member_count = (team.member_count ?? 0) + 1
-      team.updated_at = new Date().toISOString()
-
-      // If team is now full, mark COMPLETE
-      if (team.member_count >= team.max_size) team.status = 'COMPLETE'
-
-      // Link team_id on their registration for this event
-      const reg = mockRegistrations.find(r => r.user_id === request.user_id && r.event_id === team.event_id)
-      if (reg) reg.team_id = team.id
-
-      // Auto-reject all other pending requests from this user for same event
-      // (they can only be on one team)
-      mockJoinRequests
-        .filter(r => r.user_id === request.user_id && r.id !== request_id && r.status === 'PENDING')
-        .forEach(r => {
-          r.status = 'REJECTED'
-          r.updated_at = new Date().toISOString()
-          const t = mockTeams.find(t => t.id === r.team_id)
-          if (t && t.pending_requests && t.pending_requests > 0) t.pending_requests--
-        })
-    }
-
-    return NextResponse.json({ data: { request, team }, error: null, success: true })
-  } catch (e) {
+    return NextResponse.json({ data: request, error: null, success: true })
+  } catch (e: any) {
+    console.error("POST /api/teams/[id]/respond exception:", e)
     return NextResponse.json({ data: null, error: 'Failed to respond', success: false }, { status: 500 })
   }
 }

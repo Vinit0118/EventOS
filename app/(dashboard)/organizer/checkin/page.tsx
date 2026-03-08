@@ -5,26 +5,31 @@ import { QrCode, CheckCircle, XCircle, Loader2, Search } from 'lucide-react'
 import { checkinsService } from '@/services/checkins.service'
 import { eventsService } from '@/services/events.service'
 import { authService } from '@/services/auth.service'
-import { Event, CheckIn } from '@/types'
+import { Event, CheckIn, User } from '@/types'
 import { formatDateTime } from '@/lib/utils'
 
 export default function OrganizerCheckin() {
-  const user = authService.getCurrentUser()
-  const [events, setEvents]     = useState<Event[]>([])
+  const [user, setUser] = useState<User | null>(null)
+  const [events, setEvents] = useState<Event[]>([])
   const [selectedId, setSelectedId] = useState('')
-  const [qrInput, setQrInput]   = useState('')
+  const [qrInput, setQrInput] = useState('')
   const [scanning, setScanning] = useState(false)
-  const [result, setResult]     = useState<{ ok: boolean; msg: string } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [checkins, setCheckins] = useState<CheckIn[]>([])
   const [loadingCi, setLoadingCi] = useState(false)
 
   useEffect(() => {
-    if (!user) return
-    eventsService.getAll({ created_by: user.id }).then(res => {
-      const evs = res.data ?? []
-      setEvents(evs)
-      if (evs.length) setSelectedId(evs[0].id)
-    })
+    async function init() {
+      const u = await authService.getCurrentUser()
+      setUser(u)
+      if (!u) return
+      eventsService.getAll({ created_by: u.id }).then(res => {
+        const evs = res.data ?? []
+        setEvents(evs)
+        if (evs.length) setSelectedId(evs[0].id)
+      })
+    }
+    init()
   }, [])
 
   useEffect(() => { if (selectedId) loadCi() }, [selectedId])
@@ -79,7 +84,7 @@ export default function OrganizerCheckin() {
                 style={{ border: '2px dashed var(--border-strong)', background: 'var(--ink-6)' }}>
                 <QrCode className="w-10 h-10" style={{ color: 'var(--accent)', opacity: 0.5 }} />
                 {[['top-2 left-2 border-t-2 border-l-2'], ['top-2 right-2 border-t-2 border-r-2'],
-                  ['bottom-2 left-2 border-b-2 border-l-2'], ['bottom-2 right-2 border-b-2 border-r-2']].map((cls, i) => (
+                ['bottom-2 left-2 border-b-2 border-l-2'], ['bottom-2 right-2 border-b-2 border-r-2']].map((cls, i) => (
                   <div key={i} className={`absolute w-4 h-4 rounded-sm ${cls[0]}`} style={{ borderColor: 'var(--accent)' }} />
                 ))}
               </div>

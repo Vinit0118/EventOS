@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { BarChart3, TrendingUp, Users, CheckCircle, Loader2 } from 'lucide-react'
 import { eventsService } from '@/services/events.service'
 import { authService } from '@/services/auth.service'
-import { Event, EventAnalytics } from '@/types'
+import { Event, EventAnalytics, User } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 function HealthBar({ score }: { score: number }) {
@@ -20,15 +20,17 @@ function HealthBar({ score }: { score: number }) {
 }
 
 export default function OrganizerAnalyticsPage() {
-  const user = authService.getCurrentUser()
-  const [events, setEvents]     = useState<Event[]>([])
+  const [user, setUser] = useState<User | null>(null)
+  const [events, setEvents] = useState<Event[]>([])
   const [analytics, setAnalytics] = useState<Record<string, EventAnalytics>>({})
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!user) return
     async function load() {
-      const res = await eventsService.getAll({ created_by: user!.id })
+      const u = await authService.getCurrentUser()
+      setUser(u)
+      if (!u) return
+      const res = await eventsService.getAll({ created_by: u.id })
       const evs: Event[] = res.data ?? []
       setEvents(evs)
       const map: Record<string, EventAnalytics> = {}
@@ -42,9 +44,9 @@ export default function OrganizerAnalyticsPage() {
     load()
   }, [])
 
-  const totalRegs    = Object.values(analytics).reduce((s, a) => s + a.total_registrations, 0)
+  const totalRegs = Object.values(analytics).reduce((s, a) => s + a.total_registrations, 0)
   const totalCheckin = Object.values(analytics).reduce((s, a) => s + a.checked_in_count, 0)
-  const avgHealth    = Object.values(analytics).length
+  const avgHealth = Object.values(analytics).length
     ? Math.round(Object.values(analytics).reduce((s, a) => s + a.health_score, 0) / Object.values(analytics).length)
     : 0
 
@@ -59,7 +61,7 @@ export default function OrganizerAnalyticsPage() {
       <div className="grid grid-cols-3 gap-3 mb-8">
         {[
           { icon: BarChart3, label: 'Avg Health Score', value: `${avgHealth}%` },
-          { icon: Users,     label: 'Total Registrations', value: totalRegs },
+          { icon: Users, label: 'Total Registrations', value: totalRegs },
           { icon: CheckCircle, label: 'Total Checked In', value: totalCheckin },
         ].map(({ icon: Icon, label, value }) => (
           <div key={label} className="card bg-white p-5 slide-up">

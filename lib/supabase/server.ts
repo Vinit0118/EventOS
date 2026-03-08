@@ -1,66 +1,44 @@
+// Path: lib/supabase/server.ts
 // ─── SUPABASE SERVER CLIENT ───────────────────────────────────────────────────
-// Used in API Routes and Server Components
+// Used in API Routes and Server Components.
+// Reads/writes cookies so Supabase Auth session is maintained across requests.
 
-// ─── MOCK CLIENT (active until Supabase is connected) ────────────────────────
-export const createServerClient = () => {
-  return {
-    auth: {
-      getUser: async () => ({ data: { user: null }, error: null }),
-      getSession: async () => ({ data: { session: null }, error: null }),
-      admin: {
-        createUser: async (payload: any) => ({ data: null, error: null }),
-        deleteUser: async (id: string) => ({ data: null, error: null }),
-      },
-    },
-    from: (table: string) => ({
-      select: (cols = '*') => ({
-        eq: (col: string, val: any) => ({
-          single: async () => ({ data: null, error: null }),
-          data: [],
-          error: null,
-        }),
-        data: [],
-        error: null,
-      }),
-      insert: (payload: any) => ({
-        select: () => ({
-          single: async () => ({ data: null, error: null }),
-        }),
-      }),
-      update: (payload: any) => ({
-        eq: (col: string, val: any) => ({
-          select: () => ({
-            single: async () => ({ data: null, error: null }),
-          }),
-        }),
-      }),
-      delete: () => ({
-        eq: (col: string, val: any) => ({ data: null, error: null }),
-      }),
-    }),
-  }
-}
-
-// ─── REAL IMPLEMENTATION (uncomment when Supabase is ready) ──────────────────
-/*
 import { createServerClient as _createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 export const createServerClient = () => {
   const cookieStore = cookies()
+
   return _createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return cookieStore.getAll() },
+        getAll() {
+          return cookieStore.getAll()
+        },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Called from a Server Component — cookies are read-only.
+            // Safe to ignore: middleware handles session refresh.
+          }
         },
       },
     }
   )
 }
-*/
+
+// ─── SERVICE ROLE CLIENT ──────────────────────────────────────────────────────
+// Bypasses RLS. Use ONLY in trusted server-side routes (e.g. sending
+// notifications, admin operations). Never expose to the client.
+
+export const createServiceClient = () =>
+  createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )

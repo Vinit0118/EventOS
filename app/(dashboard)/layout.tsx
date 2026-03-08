@@ -8,14 +8,15 @@ import Sidebar from '@/components/shared/Sidebar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const [user, setUser]       = useState<User | null>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const session = authService.getSession()
-    if (!session) { router.replace('/login'); return }
-    setUser(session.user)
-    setLoading(false)
+    authService.getCurrentUser().then(currentUser => {
+      if (!currentUser) { router.replace('/login'); return }
+      setUser(currentUser)
+      setLoading(false)
+    })
   }, [router])
 
   if (loading) return (

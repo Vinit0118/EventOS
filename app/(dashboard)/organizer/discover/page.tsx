@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Calendar, MapPin, Users, Search } from 'lucide-react'
 import { eventsService } from '@/services/events.service'
 import { authService } from '@/services/auth.service'
-import { Event } from '@/types'
+import { Event, User } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -13,19 +13,25 @@ const STATUS_BADGE: Record<string, string> = {
 }
 
 export default function OrganizerDiscoverPage() {
-  const user = authService.getCurrentUser()
+  const [user, setUser] = useState<User | null>(null)
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
-    eventsService.getAll().then(res => {
-      // Show events NOT created by this organizer
-      setEvents((res.data ?? []).filter((e: Event) =>
-        ['PUBLISHED', 'ONGOING'].includes(e.status) && e.created_by !== user?.id
-      ))
-      setLoading(false)
-    })
+    async function init() {
+      const u = await authService.getCurrentUser()
+      setUser(u)
+      if (!u) return
+      eventsService.getAll().then(res => {
+        // Show events NOT created by this organizer
+        setEvents((res.data ?? []).filter((e: Event) =>
+          ['PUBLISHED', 'ONGOING'].includes(e.status) && e.created_by !== u.id
+        ))
+        setLoading(false)
+      })
+    }
+    init()
   }, [])
 
   const filtered = events.filter(e =>
@@ -74,9 +80,9 @@ export default function OrganizerDiscoverPage() {
               <p className="text-sm leading-relaxed mb-4 line-clamp-2" style={{ color: 'var(--ink-3)' }}>{event.description}</p>
               <div className="space-y-1.5">
                 {[
-                  { icon: MapPin,   text: event.location },
+                  { icon: MapPin, text: event.location },
                   { icon: Calendar, text: formatDate(event.start_date) },
-                  { icon: Users,    text: `${event.registration_count ?? 0} / ${event.max_participants} registered` },
+                  { icon: Users, text: `${event.registration_count ?? 0} / ${event.max_participants} registered` },
                 ].map(({ icon: Icon, text }) => (
                   <div key={text} className="flex items-center gap-2 text-xs" style={{ color: 'var(--ink-3)' }}>
                     <Icon className="w-3 h-3 flex-shrink-0" />{text}

@@ -7,17 +7,17 @@ import { Eye, EyeOff, Loader2, ArrowRight, Mail, Lock } from 'lucide-react'
 import { authService } from '@/services/auth.service'
 
 const QUICK = [
-  { label: '🎯 Organizer',   email: 'organizer@eventos.dev',  pass: 'org123' },
+  { label: '🎯 Organizer', email: 'organizer@eventos.dev', pass: 'org123' },
   { label: '🎟 Participant', email: 'participant@eventos.dev', pass: 'part123' },
 ]
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail]       = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -26,7 +26,6 @@ export default function LoginPage() {
     if (!res.success || !res.data) {
       setError(res.error ?? 'Invalid credentials'); setLoading(false); return
     }
-    authService.saveSession(res.data)
     router.push(authService.getDashboardRoute(res.data.user.role))
   }
 

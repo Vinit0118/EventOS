@@ -5,30 +5,33 @@ import { Calendar, MapPin, Clock, Users, CheckCircle, Loader2, Plus, Search, Boo
 import { authService } from '@/services/auth.service'
 import { eventsService } from '@/services/events.service'
 import { registrationsService } from '@/services/registrations.service'
-import { Event, Registration } from '@/types'
+import { Event, Registration, User } from '@/types'
 import { formatDate, timeUntil } from '@/lib/utils'
 
 const FILTERS = ['All', 'Hackathons', 'Workshops', 'Meetups', 'Online', 'Free']
 
 export default function ParticipantDiscoverPage() {
-  const user = authService.getCurrentUser()
-  const [events, setEvents]     = useState<Event[]>([])
-  const [myRegs, setMyRegs]     = useState<Registration[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [user, setUser] = useState<User | null>(null)
+  const [events, setEvents] = useState<Event[]>([])
+  const [myRegs, setMyRegs] = useState<Registration[]>([])
+  const [loading, setLoading] = useState(true)
   const [registering, setRegistering] = useState<string | null>(null)
-  const [toast, setToast]       = useState('')
-  const [search, setSearch]     = useState('')
+  const [toast, setToast] = useState('')
+  const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState('All')
 
   useEffect(() => {
-    if (!user) return
     async function load() {
+      const u = await authService.getCurrentUser()
+      setUser(u)
+      if (!u) return
+
       const [evRes, regRes] = await Promise.all([
         eventsService.getAll(),
-        registrationsService.getMyRegistrations(user!.id),
+        registrationsService.getMyRegistrations(u.id),
       ])
       setEvents((evRes.data ?? []).filter((e: Event) =>
-        ['PUBLISHED', 'ONGOING'].includes(e.status) && e.created_by !== user!.id
+        ['PUBLISHED', 'ONGOING'].includes(e.status) && e.created_by !== u.id
       ))
       setMyRegs((regRes.data ?? []).filter((r: Registration) => r.status !== 'CANCELLED'))
       setLoading(false)
@@ -53,10 +56,10 @@ export default function ParticipantDiscoverPage() {
   const registeredIds = new Set(myRegs.map(r => r.event_id))
 
   const filtered = events.filter(e =>
-    (!search ||
-      e.title.toLowerCase().includes(search.toLowerCase()) ||
-      e.location.toLowerCase().includes(search.toLowerCase()) ||
-      e.tags.some(t => t.toLowerCase().includes(search.toLowerCase())))
+  (!search ||
+    e.title.toLowerCase().includes(search.toLowerCase()) ||
+    e.location.toLowerCase().includes(search.toLowerCase()) ||
+    e.tags.some(t => t.toLowerCase().includes(search.toLowerCase())))
   )
 
   return (
@@ -75,9 +78,11 @@ export default function ParticipantDiscoverPage() {
       {/* Toast */}
       {toast && (
         <div className="mb-5 flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium slide-up"
-          style={{ background: toast.includes('fail') || toast.includes('Error') ? 'var(--red-light)' : 'var(--green-light)',
-                   color: toast.includes('fail') || toast.includes('Error') ? 'var(--red)' : 'var(--green)',
-                   border: `1px solid ${toast.includes('fail') || toast.includes('Error') ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}` }}>
+          style={{
+            background: toast.includes('fail') || toast.includes('Error') ? 'var(--red-light)' : 'var(--green-light)',
+            color: toast.includes('fail') || toast.includes('Error') ? 'var(--red)' : 'var(--green)',
+            border: `1px solid ${toast.includes('fail') || toast.includes('Error') ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`
+          }}>
           <CheckCircle className="w-4 h-4 flex-shrink-0" />{toast}
         </div>
       )}
@@ -128,8 +133,8 @@ export default function ParticipantDiscoverPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((event, i) => {
-            const isReg  = registeredIds.has(event.id)
-            const fill   = Math.min(((event.registration_count ?? 0) / event.max_participants) * 100, 100)
+            const isReg = registeredIds.has(event.id)
+            const fill = Math.min(((event.registration_count ?? 0) / event.max_participants) * 100, 100)
             const almost = fill > 80
             const startDate = new Date(event.start_date)
             const day = startDate.getDate()
@@ -168,9 +173,9 @@ export default function ParticipantDiscoverPage() {
 
                   <div className="space-y-1.5 mb-3">
                     {[
-                      { icon: MapPin,   text: event.location },
-                      { icon: Clock,    text: timeUntil(event.registration_deadline) },
-                      { icon: Users,    text: event.type === 'TEAM' ? `Teams of ${event.min_team_size}–${event.max_team_size}` : 'Individual' },
+                      { icon: MapPin, text: event.location },
+                      { icon: Clock, text: timeUntil(event.registration_deadline) },
+                      { icon: Users, text: event.type === 'TEAM' ? `Teams of ${event.min_team_size}–${event.max_team_size}` : 'Individual' },
                     ].map(({ icon: Icon, text }) => (
                       <div key={text} className="flex items-center gap-2 text-xs" style={{ color: 'var(--ink-3)' }}>
                         <Icon className="w-3 h-3 flex-shrink-0" />{text}

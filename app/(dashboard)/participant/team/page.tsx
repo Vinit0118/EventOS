@@ -9,14 +9,14 @@ import { authService } from '@/services/auth.service'
 import { teamsService } from '@/services/teams.service'
 import { registrationsService } from '@/services/registrations.service'
 import { eventsService } from '@/services/events.service'
-import { Event, Team, TeamJoinRequest, Registration } from '@/types'
+import { Event, Team, TeamJoinRequest, Registration, User } from '@/types'
 import { timeAgo } from '@/lib/utils'
 
 type Tab = 'my-team' | 'find-team' | 'create-team' | 'requests'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 function RequestStatusBadge({ status }: { status: TeamJoinRequest['status'] }) {
-  if (status === 'PENDING')  return <span className="badge badge-amber" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock className="w-3 h-3" />Pending</span>
+  if (status === 'PENDING') return <span className="badge badge-amber" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock className="w-3 h-3" />Pending</span>
   if (status === 'ACCEPTED') return <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle className="w-3 h-3" />Accepted</span>
   return <span className="badge badge-red" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><XCircle className="w-3 h-3" />Rejected</span>
 }
@@ -106,8 +106,8 @@ function TeamCard({
           {alreadyRequested
             ? <><Clock className="w-3.5 h-3.5" />Request Sent</>
             : full
-            ? 'Team Full'
-            : <><MessageSquare className="w-3.5 h-3.5" />Request to Join</>}
+              ? 'Team Full'
+              : <><MessageSquare className="w-3.5 h-3.5" />Request to Join</>}
         </button>
       )}
     </div>
@@ -116,7 +116,7 @@ function TeamCard({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ParticipantTeamPage() {
-  const user = authService.getCurrentUser()
+  const [user, setUser] = useState<User | null>(null)
 
   // FIX: separate initial-load state from team-data loading
   const [initLoading, setInitLoading] = useState(true)
@@ -127,11 +127,11 @@ export default function ParticipantTeamPage() {
   const tabLockedRef = useRef(false)
 
   const [registrations, setRegistrations] = useState<Registration[]>([])
-  const [events, setEvents]               = useState<Record<string, Event>>({})
+  const [events, setEvents] = useState<Record<string, Event>>({})
   const [selectedEventId, setSelectedEventId] = useState('')
-  const [myTeam, setMyTeam]               = useState<Team | null>(null)
-  const [teams, setTeams]                 = useState<Team[]>([])
-  const [myRequests, setMyRequests]       = useState<TeamJoinRequest[]>([])
+  const [myTeam, setMyTeam] = useState<Team | null>(null)
+  const [teams, setTeams] = useState<Team[]>([])
+  const [myRequests, setMyRequests] = useState<TeamJoinRequest[]>([])
   const [incomingRequests, setIncomingRequests] = useState<TeamJoinRequest[]>([])
 
   // Search — FIX: only triggers on button click or Enter, not on every keystroke
@@ -142,19 +142,24 @@ export default function ParticipantTeamPage() {
 
   // Create team form
   const [createForm, setCreateForm] = useState({ name: '', description: '', skills: [] as string[], skillInput: '' })
-  const [creating, setCreating]     = useState(false)
+  const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
   // Request modal
   const [requestTarget, setRequestTarget] = useState<Team | null>(null)
-  const [requestMsg, setRequestMsg]       = useState('')
-  const [sendingReq, setSendingReq]       = useState(false)
+  const [requestMsg, setRequestMsg] = useState('')
+  const [sendingReq, setSendingReq] = useState(false)
 
   // ── Initial load: registrations + event titles ──────────────────────────────
   useEffect(() => {
-    if (!user) return
     async function init() {
-      const regRes = await registrationsService.getMyRegistrations(user!.id)
+      const u = await authService.getCurrentUser()
+      setUser(u)
+      if (!u) {
+        setInitLoading(false)
+        return
+      }
+      const regRes = await registrationsService.getMyRegistrations(u.id)
       const regs: Registration[] = (regRes.data ?? []).filter((r: Registration) => r.status !== 'CANCELLED')
       setRegistrations(regs)
 
@@ -273,15 +278,15 @@ export default function ParticipantTeamPage() {
   }
 
   const requestedTeamIds = new Set(myRequests.filter(r => r.status === 'PENDING').map(r => r.team_id))
-  const pendingIncoming  = incomingRequests.filter(r => r.status === 'PENDING')
-  const myPendingOut     = myRequests.filter(r => r.status === 'PENDING').length
-  const requestBadge     = (myTeam?.leader_id === user?.id ? pendingIncoming.length : 0) + myPendingOut
+  const pendingIncoming = incomingRequests.filter(r => r.status === 'PENDING')
+  const myPendingOut = myRequests.filter(r => r.status === 'PENDING').length
+  const requestBadge = (myTeam?.leader_id === user?.id ? pendingIncoming.length : 0) + myPendingOut
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
-    { key: 'my-team',     label: myTeam ? '✦ My Team' : 'My Team' },
-    { key: 'find-team',   label: 'Find a Team' },
+    { key: 'my-team', label: myTeam ? '✦ My Team' : 'My Team' },
+    { key: 'find-team', label: 'Find a Team' },
     { key: 'create-team', label: 'Create Team' },
-    { key: 'requests',    label: 'Requests', count: requestBadge > 0 ? requestBadge : undefined },
+    { key: 'requests', label: 'Requests', count: requestBadge > 0 ? requestBadge : undefined },
   ]
 
   // ── Empty state: not registered ────────────────────────────────────────────
@@ -380,7 +385,7 @@ export default function ParticipantTeamPage() {
           <button key={key} onClick={() => handleTabChange(key)}
             className="relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
             style={{
-              color:        tab === key ? 'var(--accent)' : 'var(--ink-3)',
+              color: tab === key ? 'var(--accent)' : 'var(--ink-3)',
               borderBottom: tab === key ? '2px solid var(--accent)' : '2px solid transparent',
               marginBottom: '-1px',
             }}>
@@ -424,11 +429,10 @@ export default function ParticipantTeamPage() {
                 <div>
                   <h2 className="font-bold text-lg">{myTeam.name}</h2>
                   <div className="flex gap-1.5 mt-1 flex-wrap">
-                    <span className={`badge ${
-                      myTeam.status === 'APPROVED'  ? 'badge-green'  :
-                      myTeam.status === 'FORMING'   ? 'badge-amber'  :
-                      myTeam.status === 'COMPLETE'  ? 'badge-blue'   : 'badge-neutral'
-                    }`}>{myTeam.status}</span>
+                    <span className={`badge ${myTeam.status === 'APPROVED' ? 'badge-green' :
+                      myTeam.status === 'FORMING' ? 'badge-amber' :
+                        myTeam.status === 'COMPLETE' ? 'badge-blue' : 'badge-neutral'
+                      }`}>{myTeam.status}</span>
                     <span className="badge badge-neutral">{myTeam.member_count}/{myTeam.max_size} members</span>
                     {myTeam.leader_id === user?.id && <span className="badge badge-indigo" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Crown className="w-3 h-3" />You're the leader</span>}
                   </div>
@@ -647,7 +651,7 @@ export default function ParticipantTeamPage() {
         <div className="slide-up space-y-8">
 
           {/* Incoming (leader only) */}
-          {myTeam?.leader_id === user?.id && (
+          {myTeam && myTeam.leader_id === user?.id && (
             <div>
               <p className="label-xs mb-3">Incoming — {myTeam.name}</p>
               {incomingRequests.length === 0 ? (
