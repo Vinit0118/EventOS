@@ -9,6 +9,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(req: NextRequest) {
+    const { pathname } = req.nextUrl
+
+    // Skip middleware entirely for API routes — they handle their own auth
+    if (pathname.startsWith('/api')) {
+        return NextResponse.next()
+    }
+
     let res = NextResponse.next({ request: req })
 
     const supabase = createServerClient(
@@ -32,8 +39,6 @@ export async function middleware(req: NextRequest) {
 
     // Refresh session — must be called before any route protection checks
     const { data: { user } } = await supabase.auth.getUser()
-
-    const { pathname } = req.nextUrl
 
     // ── Route protection ───────────────────────────────────────────────────────
     const isProtected =
@@ -61,7 +66,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
     matcher: [
-        // Run on all routes except static files and Supabase auth callbacks
-        '/((?!_next/static|_next/image|favicon.ico|api/auth/callback).*)',
+        // Only run on pages that need auth checks — skip static files, API routes, and auth callbacks
+        '/((?!_next/static|_next/image|favicon.ico|api).*)',
     ],
 }

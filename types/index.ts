@@ -213,3 +213,57 @@ export interface AuthSession {
 
 export interface LoginPayload    { email: string; password: string }
 export interface RegisterPayload { email: string; password: string; name: string; role?: UserRole }
+
+// ─── JUDGING & SCORING ────────────────────────────────────────────────────────
+export interface EventJudge {
+  id: string
+  event_id: string
+  user_id: string
+  assigned_by: string
+  created_at: string
+  // joined
+  user?: User
+}
+
+export interface EventCriteria {
+  id: string
+  event_id: string
+  name: string
+  max_points: number
+  display_order: number
+  created_at: string
+}
+
+export interface Score {
+  id: string
+  event_id: string
+  judge_id: string
+  team_id?: string
+  participant_id?: string
+  criteria_id: string
+  points: number
+}
+
+export interface LeaderboardEntry {
+  event_id: string
+  team_id?: string
+  participant_id?: string
+  team_name?: string
+  participant_name?: string
+  team_status?: string
+  total_points: number
+  judges_scored: number
+}
+
+export const JUDGING_CRITERIA = [
+  'Innovation',
+  'Technical Implementation',
+  'Presentation Skills',
+  'Teamwork',
+  'Design & UX',
+  'Business Viability',
+  'Code Quality',
+  'Problem Solving',
+  'Scalability',
+  'Creativity',
+] as const
