@@ -1,9 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-
   ArrowLeft, ArrowRight, Zap, Calendar, MapPin, Clock, Users,
   Share2, Trophy, Award, Star, Check,
 } from 'lucide-react'
@@ -179,10 +178,15 @@ function DetailSkeleton() {
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
+
+  // FIX: useRef for user — auth-dependent callbacks (handleRegister, handleCancel) read from ref
+  // This prevents stale closures when those handlers are called before session fully hydrates
+  const userRef = useRef<User | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+
   const [event, setEvent] = useState<Event | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [user, setUser] = useState<User | null>(null)
   const [myReg, setMyReg] = useState<Registration | null>(null)
   const [cancelling, setCancelling] = useState(false)
   const [registering, setRegistering] = useState(false)
@@ -198,73 +202,100 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     async function init() {
-      const u = await authService.getCurrentUser()
-      setUser(u)
+      // FIX: auth and event fetch are independent — kick them off in parallel
+      // Auth resolves into ref+state; event data is what gates the skeleton removal
+      const authPromise = authService.getCurrentUser().then(u => {
+        userRef.current = u
+        setUser(u)
+        return u
+      })
 
-      // Fetch event first
-      const evRes = await fetch(`/api/events/${id}`).then(r => r.json()).catch(() => ({ success: false, error: 'Failed' }))
-      if (evRes.success) {
-        setEvent(evRes.data)
-      } else {
+      const evRes = await fetch(`/api/events/${id}`)
+        .then(r => r.json())
+        .catch(() => ({ success: false, error: 'Failed to load event' }))
+
+      if (!evRes.success) {
         setError(evRes.error ?? 'Event not found')
         setLoading(false)
         return
       }
-      setLoading(false)
+
       const ev = evRes.data as Event
+      setEvent(ev)
+      setLoading(false)
 
-      // Parallel data fetching
-      fetch(`/api/events/${id}/leaderboard`).then(r => r.json()).then(res => {
-        if (res.data) setLeaderboard(res.data)
-      })
+      // FIX: progressive parallel fetching — each sub-resource updates its own slice of state
+      // as it resolves. None of them block each other or the main event display.
 
-      fetch(`/api/events/${id}/criteria`).then(r => r.json()).then(res => {
-        if (res.data) setCriteria(res.data)
-      })
+      fetch(`/api/events/${id}/leaderboard`)
+        .then(r => r.json())
+        .then(res => { if (res.data) setLeaderboard(res.data) })
+        .catch(() => { })
 
-      // Fetch scoring targets based on event type
+      fetch(`/api/events/${id}/criteria`)
+        .then(r => r.json())
+        .then(res => { if (res.data) setCriteria(res.data) })
+        .catch(() => { })
+
+      // Scoring targets — shape depends on event type
       if (ev.type === 'TEAM') {
-        fetch(`/api/teams?event_id=${id}`).then(r => r.json()).then(res => {
-          if (res.data) setScoringTargets((res.data as { id: string; name: string }[]).map(t => ({ id: t.id, name: t.name })))
-        })
+        fetch(`/api/teams?event_id=${id}`)
+          .then(r => r.json())
+          .then(res => {
+            if (res.data) setScoringTargets(
+              (res.data as { id: string; name: string }[]).map(t => ({ id: t.id, name: t.name }))
+            )
+          })
+          .catch(() => { })
       } else {
-        fetch(`/api/registrations?event_id=${id}`).then(r => r.json()).then(res => {
-          if (res.data) setScoringTargets(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (res.data as any[])
-              .filter(r => r.status !== 'CANCELLED' && r.user)
-              .map(r => ({ id: r.user.id, name: r.user.name }))
-          )
-        })
+        fetch(`/api/registrations?event_id=${id}`)
+          .then(r => r.json())
+          .then(res => {
+            if (res.data) setScoringTargets(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (res.data as any[])
+                .filter(r => r.status !== 'CANCELLED' && r.user)
+                .map(r => ({ id: r.user.id, name: r.user.name }))
+            )
+          })
+          .catch(() => { })
       }
 
+      // User-specific data — wait for auth to settle first, then fetch in parallel
+      const u = await authPromise
       if (u) {
         registrationsService.getMyRegistrations(u.id).then(res => {
           const reg = (res.data ?? []).find(
             (r: Registration) => r.event_id === id && r.status !== 'CANCELLED'
           )
           setMyReg(reg ?? null)
-        })
+        }).catch(() => { })
 
-        fetch(`/api/events/${id}/judges`).then(r => r.json()).then(res => {
-          if (res.data && Array.isArray(res.data)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            setIsJudge(res.data.some((j: any) => j.user_id === u.id))
-          }
-        })
+        fetch(`/api/events/${id}/judges`)
+          .then(r => r.json())
+          .then(res => {
+            if (res.data && Array.isArray(res.data)) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              setIsJudge(res.data.some((j: any) => j.user_id === u.id))
+            }
+          })
+          .catch(() => { })
 
-        fetch(`/api/events/${id}/scores`).then(r => r.json()).then(res => {
-          if (res.data) setMyScores(res.data)
-        })
+        fetch(`/api/events/${id}/scores`)
+          .then(r => r.json())
+          .then(res => { if (res.data) setMyScores(res.data) })
+          .catch(() => { })
       }
     }
     init()
   }, [id])
 
   async function handleRegister() {
-    if (!user || !event) return
+    // FIX: read from ref — no stale state if called before re-render after session hydration
+    const currentUser = userRef.current
+    if (!currentUser || !event) return
     setRegistering(true)
-    const res = await registrationsService.register({ event_id: event.id, user_id: user.id })
+    const res = await registrationsService.register({ event_id: event.id, user_id: currentUser.id })
     if (res.success) {
       setMyReg(res.data)
     } else {
@@ -275,8 +306,9 @@ export default function EventDetailPage() {
 
   async function handleCancel() {
     if (!myReg) return
-    // Check if user is a team leader for this event
-    const isLeader = myReg.team_id && user
+    // FIX: read from ref for team-leader check
+    const currentUser = userRef.current
+    const isLeader = myReg.team_id && currentUser
     const msg = isLeader
       ? 'You are a team leader. Cancelling your registration will dissolve your team and cancel all team members\' registrations. Are you sure?'
       : 'Cancel your registration for this event?'
@@ -357,7 +389,6 @@ export default function EventDetailPage() {
           </div>
         ) : (
           <div style={{ position: 'relative', overflow: 'hidden' }}>
-            {/* Background orbs */}
             <div className="orb" style={{
               width: 500, height: 500,
               background: 'radial-gradient(circle,rgba(229,116,49,0.25) 0%,transparent 68%)',
@@ -371,7 +402,6 @@ export default function EventDetailPage() {
 
             <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px 80px', position: 'relative', zIndex: 1 }}>
 
-              {/* ── Back link ── */}
               <Link href="/events" className="fade-up" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
                 fontSize: 13, color: 'var(--ink-3)', textDecoration: 'none', marginBottom: 24,
@@ -390,14 +420,12 @@ export default function EventDetailPage() {
                   ? `url(${event.cover_image}) center/cover no-repeat`
                   : 'linear-gradient(135deg, #E57431 0%, #C45E1F 50%, #9A3E0A 100%)',
               }}>
-                {/* Overlay for readability */}
                 <div style={{
                   position: 'absolute', inset: 0,
                   background: event.cover_image
                     ? 'linear-gradient(180deg, rgba(26,18,11,0.1) 0%, rgba(26,18,11,0.55) 100%)'
                     : 'none',
                 }} />
-                {/* Status badge + type */}
                 <div style={{ position: 'absolute', top: 20, left: 24, display: 'flex', gap: 8 }}>
                   <span className={`badge ${STATUS_BADGE[event.status] ?? 'badge-neutral'}`} style={{ fontSize: 11, padding: '4px 10px' }}>
                     {event.status}
@@ -406,7 +434,6 @@ export default function EventDetailPage() {
                     {event.type === 'TEAM' ? '👥 Team Event' : '👤 Individual'}
                   </span>
                 </div>
-                {/* No image placeholder */}
                 {!event.cover_image && (
                   <div style={{
                     position: 'absolute', inset: 0,
@@ -421,7 +448,6 @@ export default function EventDetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 32, alignItems: 'start' }}>
                 {/* ── Main Column ── */}
                 <div className="fade-up d2">
-                  {/* Organizer */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                     <div style={{
                       width: 32, height: 32, borderRadius: 10, flexShrink: 0,
@@ -439,7 +465,6 @@ export default function EventDetailPage() {
                     </div>
                   </div>
 
-                  {/* Title */}
                   <h1 className="font-bold tracking-tight" style={{
                     fontSize: 32, fontWeight: 800, letterSpacing: '-0.03em',
                     lineHeight: 1.15, marginBottom: 8,
@@ -447,14 +472,12 @@ export default function EventDetailPage() {
                     {event.title}
                   </h1>
 
-                  {/* Tags */}
                   {event.tags.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 24 }}>
                       {event.tags.map(t => <span key={t} className="tag">{t}</span>)}
                     </div>
                   )}
 
-                  {/* Description */}
                   <div style={{ marginBottom: 32 }}>
                     <h3 className="font-bold" style={{ fontSize: 15, fontWeight: 700, marginBottom: 12, color: 'var(--ink-2)' }}>
                       About this event
@@ -467,7 +490,6 @@ export default function EventDetailPage() {
                     </p>
                   </div>
 
-                  {/* Info rows */}
                   <div className="detail-card" style={{ padding: '8px 24px', marginBottom: 32 }}>
                     <div className="info-row">
                       <div className="info-icon"><MapPin className="w-4 h-4" style={{ color: 'var(--brand)' }} /></div>
@@ -537,7 +559,6 @@ export default function EventDetailPage() {
                 {/* ── Sidebar ── */}
                 <div className="fade-up d3" style={{ position: 'sticky', top: 80 }}>
                   <div className="detail-card" style={{ padding: 24 }}>
-                    {/* Registration status */}
                     {myReg ? (
                       <div style={{ marginBottom: 20 }}>
                         <div style={{
@@ -589,7 +610,6 @@ export default function EventDetailPage() {
                       </div>
                     )}
 
-                    {/* Quick stats */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
                       <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--brand-pale)', border: '1px solid var(--brand-mid)' }}>
                         <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand-deep)', letterSpacing: '-0.02em' }}>
@@ -605,7 +625,6 @@ export default function EventDetailPage() {
                       </div>
                     </div>
 
-                    {/* Event type + team link */}
                     {event.type === 'TEAM' && myReg && (
                       <Link href={`/participant/discover`}
                         style={{
@@ -623,7 +642,6 @@ export default function EventDetailPage() {
                       </Link>
                     )}
 
-                    {/* Share */}
                     <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Link copied!') }}
                       style={{
                         marginTop: 12, width: '100%',
@@ -661,9 +679,7 @@ export default function EventDetailPage() {
                   </h2>
                 </div>
                 {leaderboard.length === 0 ? (
-                  <div style={{
-                    padding: '40px 28px', textAlign: 'center',
-                  }}>
+                  <div style={{ padding: '40px 28px', textAlign: 'center' }}>
                     <Trophy className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--ink-5)' }} />
                     <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>No scores yet</p>
                     <p style={{ fontSize: 13, color: 'var(--ink-3)' }}>
@@ -761,7 +777,6 @@ export default function EventDetailPage() {
                       Select a {event?.type === 'TEAM' ? 'team' : 'participant'} and score them on each criterion (0–10 points)
                     </p>
 
-                    {/* Target selector */}
                     {scoringTargets.length === 0 ? (
                       <div style={{
                         padding: '20px 16px', borderRadius: 12,
@@ -778,7 +793,6 @@ export default function EventDetailPage() {
                           return (
                             <button key={t.id} onClick={() => {
                               setScoringTargetId(t.id)
-                              // Pre-fill existing scores
                               const existing: Record<string, number> = {}
                               myScores.filter(s => (event?.type === 'TEAM' ? s.team_id : s.participant_id) === t.id).forEach(s => {
                                 existing[s.criteria_id] = s.points
@@ -803,7 +817,6 @@ export default function EventDetailPage() {
                       </div>
                     )}
 
-                    {/* Scoring form */}
                     {scoringTargetId && (
                       <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 20 }}>
                         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>
@@ -861,7 +874,6 @@ export default function EventDetailPage() {
                               body: JSON.stringify(payload),
                             }).then(r => r.json())
                             if (res.success) {
-                              // Refresh scores and leaderboard
                               const [scoresRes, lbRes] = await Promise.all([
                                 fetch(`/api/events/${id}/scores`).then(r => r.json()),
                                 fetch(`/api/events/${id}/leaderboard`).then(r => r.json()),
